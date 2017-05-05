@@ -182,6 +182,37 @@ typedef gboolean (*GSourceFunc)       (gpointer user_data);
 typedef void     (*GChildWatchFunc)   (GPid     pid,
                                        gint     status,
                                        gpointer user_data);
+
+/**
+ * GPollerFuncs:
+ * @start: Called to start iteration. This function pointer may be %NULL.
+ * @finalize: Called when the poll backend is finalized.
+ *     This function pointer may be %NULL.
+ * @add_fd: Called to register a file descriptor at the poll facility.
+ *     The priority value can be ignored or used for optimization.
+ *     Not all descriptors added by @add_fd will be removed by @remove_fd;
+ *     the implementation of a poll backend should clean up any remaining state
+ *     when an instance is destroyed.
+ * @modify_fd: Called to modify polling information on a previously
+ *     registered file descriptor.
+ *     The priority value can be ignored or used for optimization.
+ * @remove_fd: Called when a file descriptor is removed from the poll.
+ * @reset: Called when the poll backend is about to resume iteration after
+ *     another poll backend has been used in an inner event loop.
+ *     The implementation must remove all file descriptors from the poll.
+ * @iterate: Called to perform a single iteration step using the iteration
+ *     stage methods of the passed #GMainLoop: g_main_loop_prepare_poll()
+ *     and g_main_loop_process_poll().
+ *
+ * The <structname>GPollerFuncs</structname> structure contains a table
+ * of functions used to implement a poll backend for #GMainLoop.
+ *
+ * All the backend functions are called from the thread owning the
+ * #GMainContext while the event loop is running using the backend; by design,
+ * no concurrency locking is necessary in the backend implementation.
+ */
+typedef struct _GPollerFuncs            GPollerFuncs;
+
 struct _GSource
 {
   /*< private >*/
@@ -239,6 +270,26 @@ struct _GSourceFuncs
   /* For use by g_source_set_closure */
   GSourceFunc     closure_callback;        
   GSourceDummyMarshal closure_marshal; /* Really is of type GClosureMarshal */
+};
+
+struct _GPollerFuncs
+{
+  void     (*start)     (gpointer backend_data,
+                         GMainLoop *loop);
+  void     (*finalize)  (gpointer backend_data);
+  void     (*add_fd)    (gpointer backend_data,
+                         gint     fd,
+                         gushort  events,
+                         gint     priority);
+  void     (*modify_fd) (gpointer backend_data,
+                         gint     fd,
+                         gushort  events,
+                         gint     priority);
+  void     (*remove_fd) (gpointer backend_data,
+                         gint     fd);
+  void     (*reset)     (gpointer backend_data);
+  void     (*iterate)   (gpointer backend_data,
+                         GMainLoop *loop);
 };
 
 /* Standard priorities */
@@ -425,6 +476,21 @@ GLIB_AVAILABLE_IN_ALL
 gboolean   g_main_loop_is_running (GMainLoop    *loop);
 GLIB_AVAILABLE_IN_ALL
 GMainContext *g_main_loop_get_context (GMainLoop    *loop);
+
+GLIB_AVAILABLE_IN_2_53
+GMainLoop *g_main_loop_new_with_poller (GMainContext *context,
+                                        const GPollerFuncs *funcs,
+                                        gpointer      poller_data);
+GLIB_AVAILABLE_IN_2_53
+gboolean   g_main_loop_start      (GMainLoop    *loop);
+GLIB_AVAILABLE_IN_2_53
+gint     g_main_loop_prepare_poll (GMainLoop     *loop,
+                                   gint          *priority);
+GLIB_AVAILABLE_IN_2_53
+void     g_main_loop_process_poll (GMainLoop     *loop,
+                                   gint           priority,
+                                   const GPollFD *fds,
+                                   gint           n_fds);
 
 /* GSource: */
 
